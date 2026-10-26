@@ -34,6 +34,10 @@ icns = asset_dir / f'{slug}.icns'
 if icns.is_file():
     icns.write_bytes((icons / f'{title}.icns').read_bytes())
     updated.append(str(icns.relative_to(root)))
+# Windows uses the ICO in the executable, installer, Start menu, and shortcuts.
+ico = asset_dir / f'{slug}.ico'
+image.save(ico, format='ICO', sizes=[(n, n) for n in (16, 24, 32, 48, 64, 128, 256)])
+updated.append(str(ico.relative_to(root)))
 if not updated:
     raise SystemExit(f'no app icons found in {root}')
 print(f'{title}: overlaid {len(updated)} assets: ' + ', '.join(updated))

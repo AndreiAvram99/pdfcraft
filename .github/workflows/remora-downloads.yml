@@ -35,6 +35,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: remora-mac
+      - name: Require Apple signing and notarization credentials
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::$name is required for a notarized Mac release"
+              exit 1
+            fi
+          done
       - name: Import Developer ID certificate
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -46,6 +61,15 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: packaging/macos/package.sh --arch aarch64
+      - name: Verify notarized Mac installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/release/*-macos-aarch64.dmg)
+          (( ${#files[@]} == 1 )) || { echo 'Expected one Mac installer'; exit 1; }
+          xcrun stapler validate "${files[0]}"
+          spctl --assess --type open --context context:primary-signature -vv "${files[0]}"
       - uses: actions/upload-artifact@v4
         with:
           name: remora-mac
@@ -127,4 +151,4 @@ jobs:
           gh release create "$tag" "${files[@]}" \
             --target "$GITHUB_SHA" \
             --title "${GITHUB_REPOSITORY#*/} $version (Remora build)" \
-            --notes "Built automatically from this fork's main commit $GITHUB_SHA. Mac installer is ad hoc signed and Windows installer is unsigned; operating systems may show a security warning."
+            --notes "Built automatically from this fork's main commit $GITHUB_SHA. Mac installer is Developer ID signed and Apple notarized. Windows installer is unsigned and may show a SmartScreen warning."

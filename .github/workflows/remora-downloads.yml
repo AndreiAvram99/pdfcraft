@@ -68,8 +68,16 @@ jobs:
           shopt -s nullglob
           files=(dist/release/*-macos-aarch64.dmg)
           (( ${#files[@]} == 1 )) || { echo 'Expected one Mac installer'; exit 1; }
-          xcrun stapler validate "${files[0]}"
-          spctl --assess --type open --context context:primary-signature -vv "${files[0]}"
+          retry_check() {
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if "$@"; then return 0; fi
+              (( attempt == 5 )) && return 1
+              sleep $((attempt * 5))
+            done
+          }
+          retry_check xcrun stapler validate "${files[0]}"
+          retry_check spctl --assess --type open --context context:primary-signature -vv "${files[0]}"
       - uses: actions/upload-artifact@v4
         with:
           name: remora-mac

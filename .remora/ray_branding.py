@@ -56,6 +56,29 @@ def mac_package(text: str) -> str:
     text = text.replace(old_dmg, f"{new_slug}-$VERSION-macos-$ARCH.dmg")
     text = text.replace(f'-hfs-volume-name "{old_title}"', f'-hfs-volume-name "{new_title}"')
     text = text.replace(f'-volname "{old_title}"', f'-volname "{new_title}"')
+    # Apple's ticket lookup occasionally loses its CloudKit connection even
+    # after notarization and stapling succeed. Some forks already retry it.
+    direct = 'xcrun stapler validate "$DMG"'
+    if direct in text:
+        marker = "set -euo pipefail\n"
+        if marker not in text:
+            raise SystemExit("Mac package script has no strict-mode marker")
+        helper = """
+validate_staple() {
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if xcrun stapler validate "$1"; then return 0; fi
+    [[ "$attempt" = 5 ]] && return 1
+    echo "Stapler lookup failed (attempt $attempt of 5); retrying" >&2
+    sleep $((attempt * 5))
+  done
+}
+"""
+        text = text.replace(marker, marker + helper, 1)
+        text = text.replace('xcrun stapler validate "$APP"', 'validate_staple "$APP"')
+        text = text.replace(direct, 'validate_staple "$DMG"')
+    elif 'stapler_retry validate "$DMG"' not in text:
+        raise SystemExit("Mac package script has no DMG ticket validation")
     return text
 
 

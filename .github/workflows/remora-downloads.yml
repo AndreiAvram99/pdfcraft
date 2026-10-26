@@ -1,0 +1,92 @@
+name: Remora downloads
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: remora-downloads-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    name: Mac Apple Silicon
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: remora-mac
+      - name: Build Mac installer
+        run: packaging/macos/package.sh --arch aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remora-mac
+          path: dist/release/*-macos-aarch64.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: remora-windows-x64
+      - uses: storytold/craft-common-actions/actions/install-wix@main
+        with:
+          wix-version: 5.0.2
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./packaging/windows/package.ps1 -Arch x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remora-windows
+          path: |
+            dist/release/*-windows-x64.msi
+            dist/release/*-windows-x64-portable.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish Mac and Windows downloads
+    runs-on: ubuntu-latest
+    needs: [mac, windows]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: remora-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish this fork's verified build outputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(release-assets/*.dmg release-assets/*.msi release-assets/*.zip)
+          (( ${#files[@]} >= 2 )) || { echo 'Both platforms need installers'; exit 1; }
+          version=$(python3 - <<'PY'
+          import tomllib
+          with open('Cargo.toml', 'rb') as file:
+              print(tomllib.load(file)['workspace']['package']['version'])
+          PY
+          )
+          tag="remora-${GITHUB_SHA:0:12}"
+          gh release create "$tag" "${files[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "${GITHUB_REPOSITORY#*/} $version (Remora build)" \
+            --notes "Built automatically from this fork's main commit $GITHUB_SHA. Mac installer is ad hoc signed and Windows installer is unsigned; operating systems may show a security warning."

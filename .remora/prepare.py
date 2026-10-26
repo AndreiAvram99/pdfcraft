@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the owner's personal Craft icon and interface changes before packaging."""
+"""Apply personal icons, interface changes and Ray display branding."""
 from pathlib import Path
 import subprocess
 import sys
@@ -10,3 +10,5 @@ if not slug.endswith('craft'):
     raise SystemExit(f'Unexpected Craft checkout name: {slug}')
 title = slug[:-5].capitalize() + 'Craft'
 subprocess.run([sys.executable, str(root / '.remora' / 'overlay.py'), title, str(root)], check=True)
+ray_title = 'PhotRay' if slug == 'photocraft' else title[:-5] + 'Ray'
+subprocess.run([sys.executable, str(root / '.remora' / 'ray_branding.py'), title, ray_title, str(root)], check=True)

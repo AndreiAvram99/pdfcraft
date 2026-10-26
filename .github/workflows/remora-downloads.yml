@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply Andrei's Craft modifications
+      - name: Apply Andrei's Ray branding and modifications
         run: |
           python -m pip install Pillow
           python .remora/prepare.py
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Apply Andrei's Craft modifications
+      - name: Apply Andrei's Ray branding and modifications
         run: |
           python -m pip install Pillow
           python .remora/prepare.py
@@ -150,5 +150,5 @@ jobs:
           tag="remora-${GITHUB_SHA:0:12}"
           gh release create "$tag" "${files[@]}" \
             --target "$GITHUB_SHA" \
-            --title "${GITHUB_REPOSITORY#*/} $version (Remora build)" \
-            --notes "Built automatically from this fork's main commit $GITHUB_SHA. Mac installer is Developer ID signed and Apple notarized. Windows installer is unsigned and may show a SmartScreen warning."
+            --title "PdfRay $version (Remora build)" \
+            --notes "PdfRay built automatically from this fork's main commit $GITHUB_SHA. Mac installer is Developer ID signed and Apple notarized. Windows installer is unsigned and may show a SmartScreen warning."

@@ -93,7 +93,9 @@ for extra in (root / "packaging/windows").glob("*.wxs"):
 
 # Change text shown by the running app, including window titles, menus, dialogs,
 # notifications and translated UI. Keep paths, serialized markers, and author credit.
-string_literal = re.compile(r'"(?:\\.|[^"\\])*"')
+# Stay within one source line. A multiline match can start at the closing
+# quote of one Rust string and consume code up to the next opening quote.
+string_literal = re.compile(r'"(?:\\.|[^"\\\n])*"')
 
 
 def ui_source(text: str) -> str:
@@ -106,7 +108,7 @@ def ui_source(text: str) -> str:
             f"{old_title}Data", f"/{old_title}", f"\\\\{old_title}",
         )):
             return value
-        return word.sub(new_title, value)
+        return word.sub(new_title, value).replace(f"{old_title}u", new_title)
 
     return string_literal.sub(replace_literal, text)
 
@@ -134,7 +136,7 @@ if build_script.is_file():
 for path in (root / "crates/ui-egui/src").rglob("*.tsv"):
     original = path.read_text(encoding="utf-8")
     updated = "\n".join(
-        line if "authors" in line or "Copyright" in line else word.sub(new_title, line)
+        line if "authors" in line or "Copyright" in line else word.sub(new_title, line).replace(f"{old_title}u", new_title)
         for line in original.split("\n")
     )
     if updated != original:

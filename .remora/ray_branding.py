@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import re
+import runpy
 import sys
 
 
@@ -54,6 +55,9 @@ def mac_package(text: str) -> str:
     if old_dmg not in text:
         raise SystemExit("Mac DMG output name changed upstream")
     text = text.replace(old_dmg, f"{new_slug}-$VERSION-macos-$ARCH.dmg")
+    # Finder uses the .app folder name inside the DMG, not just CFBundleDisplayName.
+    # Keep the bundle ID and executable name stable for existing users.
+    text = text.replace(f"{old_title}.app", f"{new_title}.app")
     text = text.replace(f'-hfs-volume-name "{old_title}"', f'-hfs-volume-name "{new_title}"')
     text = text.replace(f'-volname "{old_title}"', f'-volname "{new_title}"')
     # Apple's ticket lookup occasionally loses its CloudKit connection even
@@ -83,6 +87,25 @@ validate_staple() {
 
 
 rewrite(root / "packaging/macos/package.sh", mac_package)
+
+# Keep the Finder icon position and background alias in sync with the new
+# .app folder and volume name. This runs only on the Mac CI job.
+dmg_generator = root / "packaging/macos/dmg/generate.py"
+if dmg_generator.is_file():
+    def dmg_layout(text: str) -> str:
+        volume = f'VOLUME = "{old_title}"'
+        icon = f'"{old_title}.app":'
+        if volume not in text or icon not in text:
+            raise SystemExit("DMG layout source changed upstream")
+        return text.replace(volume, f'VOLUME = "{new_title}"').replace(
+            icon, f'"{new_title}.app":'
+        )
+
+    rewrite(dmg_generator, dmg_layout)
+    if sys.platform == "darwin":
+        layout_dir = dmg_generator.parent
+        layout_name = "DS_Store" if (layout_dir / "DS_Store").is_file() else "dmg-layout.DS_Store"
+        runpy.run_path(str(dmg_generator))["write_ds_store"](str(layout_dir / layout_name))
 
 
 def windows_package(text: str) -> str:

@@ -5,7 +5,7 @@
 .DESCRIPTION
   Tries, in order:
     1. A code-signing certificate file:   WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD
-    2. Azure Trusted Signing:             AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
+    2. Azure Artifact Signing:             AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
                                           AZURE_SIGNING_ENDPOINT (e.g. https://eus.codesigning.azure.net),
                                           AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE
   With neither, it prints a warning and leaves the files unsigned (exit code 0), so test builds
@@ -48,6 +48,8 @@ $Files = $Files | ForEach-Object { (Resolve-Path $_).Path }
 $haveCert = [bool]$env:WINDOWS_CERTIFICATE
 $azureVars = 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET', 'AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_CERT_PROFILE'
 $haveAzure = -not ($azureVars | Where-Object { -not [Environment]::GetEnvironmentVariable($_) })
+$partialAzure = ($azureVars | Where-Object { [Environment]::GetEnvironmentVariable($_) }).Count -gt 0 -and -not $haveAzure
+if ($partialAzure -and -not $haveCert) { throw 'Incomplete Azure Artifact Signing configuration; refusing to publish unsigned files' }
 
 if (-not $haveCert -and -not $haveAzure) {
   Write-Warn "Windows signing secrets not set (WINDOWS_CERTIFICATE or AZURE_*): leaving unsigned: $($Files -join ', ')"
@@ -55,7 +57,7 @@ if (-not $haveCert -and -not $haveAzure) {
 }
 
 $script:SignTool = Find-SignTool
-$common = @('sign', '/v', '/fd', 'SHA256', '/td', 'SHA256', '/d', 'PdfCraft', '/du', 'https://github.com/storytold/pdfcraft')
+$common = @('sign', '/v', '/fd', 'SHA256', '/td', 'SHA256', '/d', 'PdfCraft', '/du', 'https://github.com/AndreiAvram99/pdfcraft')
 $tmp = Join-Path ([IO.Path]::GetTempPath()) "pdfcraft-sign-$([IO.Path]::GetRandomFileName())"
 New-Item -ItemType Directory -Path $tmp | Out-Null
 
@@ -70,22 +72,24 @@ try {
     Invoke-SignTool ($signArgs + $Files)
   }
   else {
-    Write-Output "Signing with Azure Trusted Signing ($env:AZURE_SIGNING_ACCOUNT / $env:AZURE_CERT_PROFILE): $($Files -join ', ')"
+    Write-Output "Signing with Azure Artifact Signing ($env:AZURE_SIGNING_ACCOUNT / $env:AZURE_CERT_PROFILE): $($Files -join ', ')"
     # The dlib authenticates with DefaultAzureCredential, which reads AZURE_TENANT_ID,
     # AZURE_CLIENT_ID and AZURE_CLIENT_SECRET from the environment.
     $trustedSigningVersion = '1.0.95'
     $trustedSigningSha256 = '3bfcf1e0a3cb42af1692f0a8ed45c15de070c2de86f28a59b2795d904d8a920f'
-    $pkg = Join-Path $tmp 'trusted-signing.zip'
-    $uri = "https://api.nuget.org/v3-flatcontainer/microsoft.trusted.signing.client/$trustedSigningVersion/microsoft.trusted.signing.client.$trustedSigningVersion.nupkg"
+    $artifactSigningVersion = '1.0.146'
+    $artifactSigningSha256 = '7761e5d8f31e54b764da21d33cd8b0a2940e1b05526c7dfcb5e94b0431426f70'
+    $pkg = Join-Path $tmp 'artifact-signing.zip'
+    $uri = "https://api.nuget.org/v3-flatcontainer/microsoft.artifactsigning.client/$artifactSigningVersion/microsoft.artifactsigning.client.$artifactSigningVersion.nupkg"
     Invoke-WebRequest -Uri $uri -OutFile $pkg
     $actualHash = (Get-FileHash -Path $pkg -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actualHash -ne $trustedSigningSha256) {
-      throw "Microsoft.Trusted.Signing.Client $trustedSigningVersion checksum mismatch"
+    if ($actualHash -ne $artifactSigningSha256) {
+      throw "Microsoft.ArtifactSigning.Client $artifactSigningVersion checksum mismatch"
     }
     Expand-Archive -Path $pkg -DestinationPath (Join-Path $tmp 'client') -Force
     $dlib = Get-ChildItem -Path (Join-Path $tmp 'client') -Recurse -Filter Azure.CodeSigning.Dlib.dll |
       Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1
-    if (-not $dlib) { throw 'Azure.CodeSigning.Dlib.dll not found in Microsoft.Trusted.Signing.Client' }
+    if (-not $dlib) { throw 'Azure.CodeSigning.Dlib.dll not found in Microsoft.ArtifactSigning.Client' }
     $metadata = Join-Path $tmp 'metadata.json'
     @{
       Endpoint               = $env:AZURE_SIGNING_ENDPOINT

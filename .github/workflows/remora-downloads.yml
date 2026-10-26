@@ -35,7 +35,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: remora-mac
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: packaging/macos/import-cert.sh
       - name: Build Mac installer
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: packaging/macos/package.sh --arch aarch64
       - uses: actions/upload-artifact@v4
         with:

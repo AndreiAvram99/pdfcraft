@@ -100,6 +100,33 @@ def wix(text: str) -> str:
     text = word.sub(new_title, text)
     # The old registry location is used to find and upgrade existing installs.
     text = text.replace(f"Software\\{new_title}", f"Software\\{old_title}")
+    # PDF shell verbs and the registered ProgID are stable Windows identities.
+    # Changing their keys would orphan an existing install's associations.
+    if old_slug == "pdfcraft":
+        for suffix in (".Document", ".Edit", ".CreatePdf"):
+            text = text.replace(f"{new_title}{suffix}", f"{old_title}{suffix}")
+        text = text.replace(f'FileSearch Name="{new_title}.lnk"', f'FileSearch Name="{old_title}.lnk"')
+        old_search = f'''        <FileSearch Name="{old_title}.lnk" />
+      </DirectorySearch>
+    </Property>'''
+        new_search = old_search + f'''
+    <Property Id="EXISTINGRAYDESKTOPSHORTCUT">
+      <DirectorySearch Id="RayDesktopSearch" Path="[DesktopFolder]" Depth="0">
+        <FileSearch Name="{new_title}.lnk" />
+      </DirectorySearch>
+    </Property>'''
+        if old_search not in text:
+            raise SystemExit("PDF desktop upgrade search changed upstream")
+        text = text.replace(old_search, new_search, 1)
+        text = text.replace(
+            "OR EXISTINGDESKTOPSHORTCUT)",
+            "OR EXISTINGDESKTOPSHORTCUT OR EXISTINGRAYDESKTOPSHORTCUT)",
+            1,
+        )
+        text = text.replace(
+            f'Name="{new_title}" Value="Software\\{old_title}\\Capabilities"',
+            f'Name="{old_title}" Value="Software\\{old_title}\\Capabilities"',
+        )
     text = text.replace('Manufacturer="Learning Machines LLC"', 'Manufacturer="Andrei Avram"')
     return text
 
@@ -112,6 +139,32 @@ for extra in (root / "packaging/windows").glob("*.wxs"):
     updated = word.sub(new_title, original)
     if updated != original:
         extra.write_text(updated, encoding="utf-8")
+
+# PdfCraft validates its compiled MSI against the public labels in WiX. Keep
+# the assertions current while preserving the old registry keys tested there.
+pdf_msi_test = root / "packaging/windows/test-msi.ps1"
+if old_slug == "pdfcraft" and pdf_msi_test.is_file():
+    original = pdf_msi_test.read_text(encoding="utf-8-sig")
+    updated = original
+    for label in (
+        "must be installed for all users",
+        "PDF workbench",
+    ):
+        updated = updated.replace(f"{old_title} {label}", f"{new_title} {label}")
+    updated = updated.replace(f"with {old_title}", f"with {new_title}")
+    updated = updated.replace("'Learning Machines LLC' 'MSI manufacturer'", "'Andrei Avram' 'MSI manufacturer'")
+    old_upgrade_check = ("Assert-KeptOnUpdate 'INSTALLDESKTOPSHORTCUT' 'WIX_UPGRADE_DETECTED' "
+                         "'EXISTINGDESKTOPSHORTCUT' 'C:\\Users\\Public\\Desktop\\PdfCraft.lnk' "
+                         "'PdfcraftDesktopShortcut' 'Desktop shortcut'")
+    if old_upgrade_check not in updated:
+        raise SystemExit("PDF desktop upgrade test changed upstream")
+    updated = updated.replace(old_upgrade_check, old_upgrade_check + "\n" +
+        "Assert-KeptOnUpdate 'INSTALLDESKTOPSHORTCUT' 'WIX_UPGRADE_DETECTED' "
+        "'EXISTINGRAYDESKTOPSHORTCUT' 'C:\\Users\\Public\\Desktop\\PdfRay.lnk' "
+        "'PdfcraftDesktopShortcut' 'Ray desktop shortcut'")
+    if updated == original:
+        raise SystemExit("PDF MSI branding assertions not found")
+    pdf_msi_test.write_text(updated, encoding="utf-8-sig")
 
 
 # Change text shown by the running app, including window titles, menus, dialogs,

@@ -107,6 +107,12 @@ if dmg_generator.is_file():
         layout_name = "DS_Store" if (layout_dir / "DS_Store").is_file() else "dmg-layout.DS_Store"
         runpy.run_path(str(dmg_generator))["write_ds_store"](str(layout_dir / layout_name))
 
+    # The upstream DMG artwork contains the old Craft title and upstream art.
+    # Render the Ray background from the same personalized icon as the app.
+    import subprocess
+    subprocess.run([sys.executable, str(root / ".remora/dmg_background.py"),
+                    old_title, new_title, str(root)], check=True)
+
 
 def windows_package(text: str) -> str:
     old_installer = f"{old_slug}-$Version-windows-$Arch"

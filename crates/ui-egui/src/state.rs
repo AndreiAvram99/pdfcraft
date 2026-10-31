@@ -251,7 +251,7 @@ pub(crate) enum CopyPage {
 /// layer as far as it was read, and the document to read the others from.
 pub(crate) struct DocumentCopyJob {
     pub(crate) pages: Vec<CopyPage>,
-    bytes: std::sync::Arc<Vec<u8>>,
+    source: pdfcraft_render::PdfSource,
     password: Option<std::sync::Arc<str>>,
 }
 
@@ -264,7 +264,7 @@ impl DocumentCopyJob {
                 None => CopyPage::ToRead,
             })
             .collect();
-        DocumentCopyJob { pages, bytes: doc.bytes.clone(), password: doc.password.as_deref().map(std::sync::Arc::from) }
+        DocumentCopyJob { pages, source: doc.source(), password: doc.password.as_deref().map(std::sync::Arc::from) }
     }
 
     /// The document's text in page order, a page per line run. Each page read here is let go
@@ -290,7 +290,7 @@ impl DocumentCopyJob {
                 CopyPage::ToRead => {
                     let r = renderer.get_or_insert_with(|| {
                         let config = pdfcraft_render::RenderConfig { password: self.password.clone(), ..Default::default() };
-                        pdfcraft_render::PageRenderer::new(self.bytes.clone(), config)
+                        pdfcraft_render::PageRenderer::new(self.source.clone(), config)
                     });
                     let req = pdfcraft_render::RenderRequest {
                         page,
@@ -344,6 +344,8 @@ pub(crate) struct OpenRequest {
     pub(crate) after_open: Option<pdfcraft_render::RemoteDestination>,
     pub(crate) recovered: Option<RecoveryMeta>,
     pub(crate) then: Option<&'static str>,
+    /// The document this reads again, in place of opening a new tab.
+    pub(crate) replaces: Option<DocId>,
 }
 
 /// Asks for the permissions password of an open document whose security restricts it, which

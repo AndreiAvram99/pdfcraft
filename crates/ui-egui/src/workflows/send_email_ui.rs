@@ -204,7 +204,9 @@ pub(crate) fn marks_body(ui: &mut egui::Ui, app: &mut PdfCraftApp) -> bool {
     ui.set_width(420.0);
     ui.label(RichText::new(tl!("Redactions aren't applied")).font(theme::semibold(18.0)));
     ui.add_space(8.0);
-    ui.label(tl!("This document has redaction marks that aren't applied. The content under them is still in the file, and anyone who receives it can read it."));
+    ui.label(tl!(
+        "This document has redaction marks that aren't applied. The content under them is still in the file, and anyone who receives it can read it."
+    ));
     ui.add_space(12.0);
     let mut close = false;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

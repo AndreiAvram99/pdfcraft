@@ -346,6 +346,30 @@ fn closed_right_panel_stays_closed_for_a_document_asking_for_its_outline() {
     assert_eq!(h.state().right, None, "the closed right panel reopened after a restart");
 }
 
+#[test]
+fn navigation_rail_toggles_between_right_and_left_and_persists() {
+    use pdfcraft_ui_egui::Dialog;
+
+    let mut h = harness(|app| app.open_bytes("fixture.pdf", None, FIXTURE.to_vec()).expect("fixture opens"));
+    assert_eq!(h.state().side_panels.rail_side, pdfcraft_ui_egui::side_panels::ToolsSide::Right);
+    h.get_by_label("Dock navigation rail on Left").click();
+    h.run_steps(3);
+    assert_eq!(h.state().side_panels.rail_side, pdfcraft_ui_egui::side_panels::ToolsSide::Left);
+    let saved = h.state().persist();
+    let mut h2 = harness(move |app| {
+        app.restore(&saved);
+    });
+    assert_eq!(h2.state().side_panels.rail_side, pdfcraft_ui_egui::side_panels::ToolsSide::Left);
+    h2.state_mut().dialog = Some(Dialog::Preferences);
+    h2.run_steps(3);
+    h2.get_by_label("Navigation rail on right").click();
+    h2.run_steps(3);
+    assert_eq!(h2.state().side_panels.rail_side, pdfcraft_ui_egui::side_panels::ToolsSide::Right);
+    h2.get_by_label("Navigation rail on left").click();
+    h2.run_steps(3);
+    assert_eq!(h2.state().side_panels.rail_side, pdfcraft_ui_egui::side_panels::ToolsSide::Left);
+}
+
 /// Read mode hides the tools, not the navigation panes: the rail's Bookmarks button opens the
 /// bookmarks when Read is the default workspace (#932), and the left tool pane stays hidden.
 #[test]

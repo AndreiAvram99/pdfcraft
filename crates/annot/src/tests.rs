@@ -2194,3 +2194,29 @@ fn degenerate_and_absurd_leader_and_caption_values_do_not_panic() {
     assert!(long.contains(&format!("({}) Tj", "w".repeat(256))), "cut to 256");
     assert!(!long.contains(&"w".repeat(257)));
 }
+
+#[test]
+fn freehand_highlight_is_compatible_ink_with_marker_blending() {
+    let shape = Shape::FreehandHighlight { strokes: vec![vec![[20.0, 100.0], [120.0, 100.0]]] };
+    let mut annotation = new(0, shape.clone());
+    annotation.style = Style::default_for(&shape);
+    let mut doc = fixture();
+    let index = add_annotation(&mut doc, &annotation, &meta("marker")).unwrap();
+    let doc = reopen(&doc);
+    let ink = &list(&doc, 0)[index];
+
+    assert_eq!(ink.name(b"Subtype"), Some(&b"Ink"[..]));
+    assert_eq!(ink.name(b"IT"), Some(&b"FreehandHighlight"[..]));
+    assert_eq!(ink.get(b"CA").and_then(Object::as_f64), Some(0.35));
+    let ap = ink.get(b"AP").unwrap().as_dict().unwrap().reference(b"N").unwrap();
+    let resources = doc.get(ap).as_dict().unwrap().get(b"Resources").cloned().unwrap();
+    let blend = resources.as_dict().unwrap().get(b"ExtGState").unwrap().as_dict().unwrap().get(b"GS0").unwrap().as_dict().unwrap();
+    assert_eq!(blend.name(b"BM"), Some(&b"Multiply"[..]));
+
+    let mut doc = doc;
+    let rect_before: Vec<f64> = list(&doc, 0)[index].get(b"Rect").unwrap().as_array().unwrap().iter().filter_map(Object::as_f64).collect();
+    set_style(&mut doc, 0, index, StyleChange { color: None, opacity: None, width: Some(34.0), endings: None }, &meta("wider")).unwrap();
+    let rect_after: Vec<f64> = list(&doc, 0)[index].get(b"Rect").unwrap().as_array().unwrap().iter().filter_map(Object::as_f64).collect();
+    assert!((rect_after[0] - (rect_before[0] - 10.0)).abs() < 1e-4);
+    assert!((rect_after[2] - (rect_before[2] + 10.0)).abs() < 1e-4);
+}

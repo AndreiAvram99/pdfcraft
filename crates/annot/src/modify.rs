@@ -576,10 +576,20 @@ pub fn set_style(doc: &mut Document, page: usize, index: usize, change: StyleCha
             }
         }
         if let Some(w) = width {
+            let old_w = border_width_of(d);
+            let w = w.max(0.0);
             let mut bs = d.get(b"BS").and_then(|b| b.as_dict()).cloned().unwrap_or_default();
-            bs.set(b"W".to_vec(), Object::Real(w.max(0.0)));
+            bs.set(b"W".to_vec(), Object::Real(w));
             d.set(b"BS".to_vec(), Object::Dict(bs));
             d.remove(b"Border");
+            if d.name(b"Subtype") == Some(b"Ink") && w > old_w {
+                let vals: Vec<f64> =
+                    d.get(b"Rect").and_then(|o| o.as_array()).map(|a| a.iter().filter_map(|x| x.as_f64()).collect()).unwrap_or_default();
+                if let Some(rect) = four(&vals) {
+                    let expanded = grow(normalize(rect), (w - old_w) / 2.0);
+                    d.set(b"Rect".to_vec(), num_array(&expanded));
+                }
+            }
         }
         if let Some(ends) = endings {
             if ends.len() == 1 {

@@ -7,9 +7,9 @@ use pdfcraft_render::{DocInfo, OpenError, RenderConfig, RenderPool, inspect};
 
 use crate::history::{Editor, Keys, TextBlocksCache};
 use crate::{
-    AppearanceCache, CertificateKey, DocId, Document, Session, TrustStore, XFA_SCRIPTS_OFF, XfaLayout, display_bytes, guard, info_fields, js,
-    note_warnings, plain_copy, recovered_render_password, render_threads, same_pages, signatures_of, unlock_with_identities, xfa, xfa_layout,
-    xfa_values_from_datasets,
+    AppearanceCache, CertificateKey, DocId, Document, Session, TrustStore, XFA_SCRIPTS_OFF, XfaLayout, display_bytes, display_config, guard,
+    info_fields, js, note_warnings, plain_copy, recovered_render_password, render_threads, same_pages, signatures_of, unlock_with_identities, xfa,
+    xfa_layout, xfa_values_from_datasets,
 };
 
 /// Immutable session state needed while a document is prepared away from its owning thread.
@@ -355,7 +355,7 @@ impl Session {
             }
         }
         let display = display_bytes(editor.as_mut(), &bytes);
-        let renderer = RenderPool::new(display.clone(), render_threads(), config.clone());
+        let renderer = RenderPool::new(display.clone(), render_threads(), display_config(&config));
         let (form, adopted) = editor
             .as_ref()
             .map(|e| {

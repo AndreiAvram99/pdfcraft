@@ -1,6 +1,7 @@
 use super::{
     Arc, DocId, EditError, Keys, OpenError, RecoverySnapshot, RenderPool, SaveOptions, Session, SignOptions, TrustStore, certificate_secured,
-    display_bytes, guard, plain_copy, render_threads, signatures_of, working_file, writable, write_full, write_incremental, xfa_sync_datasets,
+    display_bytes, display_config, guard, plain_copy, render_threads, signatures_of, working_file, writable, write_full, write_incremental,
+    xfa_sync_datasets,
 };
 
 impl Session {
@@ -177,7 +178,7 @@ impl Session {
         {
             doc.config.reading_colors = old.config.reading_colors;
             doc.config.hide_comments = old.config.hide_comments;
-            doc.renderer = RenderPool::new(doc.display.clone(), render_threads(), doc.config.clone());
+            doc.renderer = RenderPool::new(doc.display.clone(), render_threads(), display_config(&doc.config));
         }
         // Caches keyed by the edit generation (edit lines, images, measurements) must see a new
         // one; there is nothing new to autosave.
@@ -298,7 +299,7 @@ impl Session {
             };
             doc.display = display_bytes(Some(editor), &doc.bytes);
             doc.signatures = Arc::new(signatures);
-            doc.renderer = RenderPool::new(doc.display.clone(), render_threads(), doc.config.clone());
+            doc.renderer = RenderPool::new(doc.display.clone(), render_threads(), display_config(&doc.config));
         }
     }
 

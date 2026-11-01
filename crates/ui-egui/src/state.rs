@@ -334,6 +334,8 @@ pub struct PasswordPrompt {
     /// The document is encrypted with certificates: the digital ID file chosen to open it
     /// (empty until one is), whose password `input` is.
     pub digital_id: Option<String>,
+    /// A launch-time display override, applied only after this PDF is unlocked.
+    pub(crate) display_override: Option<(canvas::PageLayout, bool)>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]

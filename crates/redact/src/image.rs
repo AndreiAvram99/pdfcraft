@@ -1,16 +1,92 @@
 //! Clearing the pixels of an image under redaction regions. The image is decoded, every pixel
 //! whose footprint intersects a region is set to zero (no ink for image masks), and the result is
 //! written as a new Flate image; the original object is untouched (other pages may use it).
-//! CCITT fax images decode through `Document::decoded_image_within`, but for Group 3 on bytes,
-//! which PdfCraft's renderer may draw as other rows. Images whose codec PdfCraft can't decode
-//! (DCT, JPX, JBIG2), and Group 3 on bytes, return `None`, and the caller removes the whole image
-//! instead; that is fail-closed.
+//! DCT (JPEG) images in supported 8-bit grayscale and RGB layouts are decoded so unmarked samples
+//! remain, and CCITT fax images decode through `Document::decoded_image_within`; Group 3 on bytes
+//! is refused, which PdfCraft's renderer may draw as other rows. Images whose codec PdfCraft
+//! can't decode (JPX, JBIG2, and the other DCT cases) return `None`, and the caller removes the
+//! whole image instead; that is fail-closed.
 
 use pdfcraft_content::{Matrix, overlaps};
 use pdfcraft_cos::{Document, Object, Stream};
 
 /// Most pixels an image may have to be cleared in place (larger ones are removed).
 const MAX_PIXELS: u64 = 64 << 20;
+
+/// Decode a DCT (JPEG) image's samples for clearing. `None` when the JPEG does not decode to the
+/// size and component count its dictionary declares (the caller then removes the image, as for
+/// any other undecodable codec).
+fn jpeg_samples(raw: &[u8], ncomp: usize, w: usize, h: usize) -> Option<Vec<u8>> {
+    if jpeg_source_components(raw)? != ncomp {
+        return None;
+    }
+    let mut reader = ::image::ImageReader::with_format(std::io::Cursor::new(raw), ::image::ImageFormat::Jpeg);
+    let mut limits = ::image::Limits::default();
+    // Match the PDF's checked raster dimensions before decoding, so a mismatched JPEG header
+    // cannot make the decoder allocate for a larger image than this redaction path permits.
+    limits.max_image_width = Some(u32::try_from(w).ok()?);
+    limits.max_image_height = Some(u32::try_from(h).ok()?);
+    reader.limits(limits);
+    let img = reader.decode().ok()?;
+    if (img.width() as usize, img.height() as usize) != (w, h) {
+        return None;
+    }
+    Some(match (ncomp, img.color()) {
+        (1, ::image::ColorType::L8) => img.into_luma8().into_raw(),
+        (3, ::image::ColorType::Rgb8) => img.into_rgb8().into_raw(),
+        _ => return None,
+    })
+}
+
+/// Read the JPEG frame's encoded component count before the image decoder can convert its output.
+fn jpeg_source_components(raw: &[u8]) -> Option<usize> {
+    if raw.get(..2)? != b"\xff\xd8" {
+        return None;
+    }
+    let mut pos = 2;
+    while pos < raw.len() {
+        if raw.get(pos).copied()? != 0xff {
+            return None;
+        }
+        while raw.get(pos).copied() == Some(0xff) {
+            pos += 1;
+        }
+        let marker = raw.get(pos).copied()?;
+        pos += 1;
+        match marker {
+            // Standalone markers have no length field.
+            0x01 | 0xd0..=0xd7 => continue,
+            // The frame header must precede scan data and the end marker.
+            0x00 | 0xda | 0xd9 => return None,
+            _ => {}
+        }
+        let len = usize::from(u16::from_be_bytes([*raw.get(pos)?, *raw.get(pos + 1)?]));
+        if len < 2 {
+            return None;
+        }
+        let end = pos.checked_add(len)?;
+        if end > raw.len() {
+            return None;
+        }
+        if matches!(marker, 0xc0..=0xcf) && !matches!(marker, 0xc4 | 0xc8 | 0xcc) {
+            let ncomp = usize::from(*raw.get(pos + 7)?);
+            if ncomp == 0 || len != 8usize.checked_add(ncomp.checked_mul(3)?)? {
+                return None;
+            }
+            return Some(ncomp);
+        }
+        pos = end;
+    }
+    None
+}
+
+fn dct_components(doc: &Document, s: &Stream) -> Option<usize> {
+    match &*doc.resolve(s.dict.get(b"ColorSpace")?) {
+        Object::Name(name) if matches!(name.as_slice(), b"DeviceGray" | b"G") => Some(1),
+        Object::Name(name) if matches!(name.as_slice(), b"DeviceRGB" | b"RGB") => Some(3),
+        _ => None,
+    }
+}
 
 fn components(doc: &Document, s: &Stream) -> Option<usize> {
     let cs = doc.resolve(s.dict.get(b"ColorSpace")?);
@@ -42,6 +118,101 @@ pub(crate) fn clear(doc: &Document, s: &Stream, ctm: &Matrix, rects: &[[f64; 4]]
     decode_and_clear(doc, s, ctm, rects).ok_or(())
 }
 
+/// The raster the image dict describes, with every size checked on construction: an overflowing
+/// product refuses the image instead of sizing the writes below.
+struct Raster {
+    w: usize,
+    h: usize,
+    ncomp: usize,
+    bpc: usize,
+    bits_per_pixel: usize,
+    bytes: usize,
+    row_bits: usize,
+}
+
+impl Raster {
+    /// `None` when a dimension or product overflows or is otherwise unusable.
+    fn checked(ncomp: usize, bpc: usize, w: usize, h: usize) -> Option<Self> {
+        let bits_per_pixel = ncomp.checked_mul(bpc)?;
+        let row = w.checked_mul(bits_per_pixel)?.div_ceil(8);
+        let bytes = row.checked_mul(h)?;
+        let row_bits = row.checked_mul(8)?;
+        bytes.checked_mul(8)?;
+        Some(Self { w, h, ncomp, bpc, bits_per_pixel, bytes, row_bits })
+    }
+}
+
+/// Decode the image's samples, bounded to exactly the raster's `bytes`. `None` on any layout
+/// the decoders can't take (the caller removes the image whole).
+fn decode_samples(doc: &Document, s: &Stream, r: &Raster, dct: bool, is_fax: bool) -> Option<Vec<u8>> {
+    let mut data = if dct {
+        if r.bpc != 8 {
+            return None;
+        }
+        jpeg_samples(&s.raw, r.ncomp, r.w, r.h)?
+    } else {
+        // Decode no further than the raster can need: a filter stage may legitimately produce up to
+        // three bytes for each of it and a PNG predictor's byte per row (ASCIIHex text under Flate,
+        // two digits a byte broken into lines or spaced), as the optimizer allows. A fax image's
+        // code, which the filters before its decoder produce, takes at most about a byte per pixel
+        // plus each row's end. Data past that can only be a decompression bomb; the image is then
+        // removed whole.
+        let allowance = if is_fax {
+            r.w.checked_mul(r.h)?.checked_add(r.h.checked_mul(4)?)?.checked_add(4096)?
+        } else {
+            r.bytes.checked_add(r.h)?.checked_mul(3)?.checked_add(4096)?
+        };
+        // Through the document, which reads `/DecodeParms` given by reference (`Stream::decoded*`
+        // alone would skip such a predictor, and the cleared bytes would then miss the covered pixels).
+        doc.decoded_image_within(s, allowance).ok()?
+    };
+    if data.len() < r.bytes {
+        return None;
+    }
+    data.truncate(r.bytes);
+    Some(data)
+}
+
+/// Clear every sample the redaction rectangles cover. Conservative on purpose: a rotated or
+/// skewed image's pixel boxes may cover extra samples, and a touched sample must never survive
+/// in the file. Returns the number of cleared samples.
+fn clear_covered_pixels(data: &mut [u8], ctm: &Matrix, rects: &[[f64; 4]], r: &Raster, clear_bit: bool) -> Option<usize> {
+    let mut cleared = 0usize;
+    for j in 0..r.h {
+        // Image space has its origin at the bottom left; row 0 is at the top.
+        let v0 = 1.0 - (j + 1) as f64 / r.h as f64;
+        let v1 = 1.0 - j as f64 / r.h as f64;
+        let row_box = ctm.bbox([0.0, v0, 1.0, v1]);
+        if !rects.iter().any(|x| overlaps(*x, row_box, 0.0)) {
+            continue;
+        }
+        for i in 0..r.w {
+            let u0 = i as f64 / r.w as f64;
+            let u1 = (i + 1) as f64 / r.w as f64;
+            // The bounding box may cover extra pixels for a rotated or skewed image; that
+            // conservative over-clear prevents a touched sample surviving in the file.
+            let pixel_box = ctm.bbox([u0, v0, u1, v1]);
+            if !rects.iter().any(|x| overlaps(*x, pixel_box, 0.0)) {
+                continue;
+            }
+            cleared += 1;
+            // Every bit index is below `bytes * 8`, checked in `Raster::checked`, so this
+            // arithmetic can't overflow.
+            let start = j * r.row_bits + i * r.bits_per_pixel;
+            for bit in start..start + r.bits_per_pixel {
+                let (byte, shift) = (bit / 8, 7 - bit % 8);
+                let b = data.get_mut(byte)?;
+                if clear_bit {
+                    *b |= 1 << shift;
+                } else {
+                    *b &= !(1 << shift);
+                }
+            }
+        }
+    }
+    Some(cleared)
+}
+
 fn decode_and_clear(doc: &Document, s: &Stream, ctm: &Matrix, rects: &[[f64; 4]]) -> Option<Option<Stream>> {
     // Separate masks can retain the original image data.
     if s.dict.contains(b"SMask") || s.dict.contains(b"Mask") {
@@ -53,20 +224,20 @@ fn decode_and_clear(doc: &Document, s: &Stream, ctm: &Matrix, rects: &[[f64; 4]]
             b"FlateDecode" | b"Fl" | b"LZWDecode" | b"LZW" | b"ASCII85Decode" | b"A85" | b"ASCIIHexDecode" | b"AHx" | b"RunLengthDecode" | b"RL"
         )
     };
+    let filters: Vec<&[u8]> = match s.dict.get(b"Filter") {
+        None => Vec::new(),
+        Some(Object::Name(n)) => vec![n],
+        Some(Object::Array(a)) => a.iter().map(|f| f.as_name()).collect::<Option<_>>()?,
+        _ => return None,
+    };
+    // The JPEG decoder consumes the raw bytes, so accept DCT only as a single filter. Other filter
+    // chains retain the upstream supported-filter rules and bounded PDF stream decoder below.
+    let dct = matches!(filters.as_slice(), [b"DCTDecode"] | [b"DCT"]);
     // A CCITT fax image (its last filter) decodes through `Document::decoded_image_within`, after the
     // filters before it, so a scan stored as Group 4 is cleared like any other image.
-    let fax = |f: &Object| f.as_name().is_some_and(|n| matches!(n, b"CCITTFaxDecode" | b"CCF"));
-    let readable = |f: &Object| f.as_name().is_some_and(supported);
-    let (ok, is_fax) = match s.dict.get(b"Filter") {
-        None => (true, false),
-        Some(f @ Object::Name(_)) => (readable(f) || fax(f), fax(f)),
-        Some(Object::Array(a)) => match a.split_last() {
-            Some((last, before)) if fax(last) => (before.iter().all(readable), true),
-            _ => (a.iter().all(readable), false),
-        },
-        _ => (false, false),
-    };
-    if !ok {
+    let is_fax = filters.last().is_some_and(|n| matches!(*n, b"CCITTFaxDecode" | b"CCF"));
+    let body = if is_fax { &filters[..filters.len() - 1] } else { &filters[..] };
+    if !dct && !body.iter().all(|n| supported(n)) {
         return None;
     }
     // Group 3 on bytes is removed whole for now. The decoder reads it by its end-of-line codes
@@ -82,35 +253,24 @@ fn decode_and_clear(doc: &Document, s: &Stream, ctm: &Matrix, rects: &[[f64; 4]]
     }
     let (w, h) = (w as usize, h as usize);
     let mask = matches!(s.dict.get(b"ImageMask"), Some(Object::Bool(true)));
-    let (ncomp, bpc) = if mask { (1, 1) } else { (components(doc, s)?, s.dict.int(b"BitsPerComponent")? as usize) };
+    let ncomp = if mask {
+        if dct {
+            return None;
+        }
+        1
+    } else if dct {
+        dct_components(doc, s)?
+    } else {
+        components(doc, s)?
+    };
+    let bpc = if mask { 1 } else { s.dict.int(b"BitsPerComponent")? as usize };
     if !matches!(bpc, 1 | 2 | 4 | 8 | 16) {
         return None;
     }
     // Every size comes from the file: multiply checked, so an overflowing product refuses the image
     // instead of sizing the writes below.
-    let bits_per_pixel = ncomp.checked_mul(bpc)?;
-    let row = w.checked_mul(bits_per_pixel)?.div_ceil(8);
-    let bytes = row.checked_mul(h)?;
-    let row_bits = row.checked_mul(8)?;
-    bytes.checked_mul(8)?;
-    // Decode no further than the raster can need: a filter stage may legitimately produce up to
-    // three bytes for each of it and a PNG predictor's byte per row (ASCIIHex text under Flate,
-    // two digits a byte broken into lines or spaced), as the optimizer allows. A fax image's
-    // code, which the filters before its decoder produce, takes at most about a byte per pixel
-    // plus each row's end. Data past that can only be a decompression bomb; the image is then
-    // removed whole.
-    let allowance = if is_fax {
-        w.checked_mul(h)?.checked_add(h.checked_mul(4)?)?.checked_add(4096)?
-    } else {
-        bytes.checked_add(h)?.checked_mul(3)?.checked_add(4096)?
-    };
-    // Through the document, which reads `/DecodeParms` given by reference (`Stream::decoded*`
-    // alone would skip such a predictor, and the cleared bytes would then miss the covered pixels).
-    let mut data = doc.decoded_image_within(s, allowance).ok()?;
-    if data.len() < bytes {
-        return None;
-    }
-    data.truncate(bytes);
+    let r = Raster::checked(ncomp, bpc, w, h)?;
+    let mut data = decode_samples(doc, s, &r, dct, is_fax)?;
     // Image masks: a sample of 0 paints unless /Decode is [1 0]; cleared samples must not paint.
     let clear_bit = if mask {
         // The array, and its first number, given by reference too.
@@ -121,38 +281,7 @@ fn decode_and_clear(doc: &Document, s: &Stream, ctm: &Matrix, rects: &[[f64; 4]]
     } else {
         false
     };
-    let mut cleared = 0usize;
-    for j in 0..h {
-        // Image space has its origin at the bottom left; row 0 is at the top.
-        let v0 = 1.0 - (j + 1) as f64 / h as f64;
-        let v1 = 1.0 - j as f64 / h as f64;
-        let row_box = ctm.bbox([0.0, v0, 1.0, v1]);
-        if !rects.iter().any(|r| overlaps(*r, row_box, 0.0)) {
-            continue;
-        }
-        for i in 0..w {
-            let u0 = i as f64 / w as f64;
-            let u1 = (i + 1) as f64 / w as f64;
-            // The bounding box may cover extra pixels for a rotated or skewed image; that
-            // conservative over-clear prevents a touched sample surviving in the file.
-            let pixel_box = ctm.bbox([u0, v0, u1, v1]);
-            if !rects.iter().any(|r| overlaps(*r, pixel_box, 0.0)) {
-                continue;
-            }
-            cleared += 1;
-            // `bytes * 8` fits, and every bit index is below it, so this arithmetic can't overflow.
-            let start = j * row_bits + i * bits_per_pixel;
-            for bit in start..start + bits_per_pixel {
-                let (byte, shift) = (bit / 8, 7 - bit % 8);
-                let b = data.get_mut(byte)?;
-                if clear_bit {
-                    *b |= 1 << shift;
-                } else {
-                    *b &= !(1 << shift);
-                }
-            }
-        }
-    }
+    let cleared = clear_covered_pixels(&mut data, ctm, rects, &r, clear_bit)?;
     if cleared == 0 {
         return Some(None);
     }

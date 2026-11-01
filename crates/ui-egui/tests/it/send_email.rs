@@ -8,6 +8,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use pdfcraft_engine::{Edit, NewAnnotation, Shape, Style, rect_quad};
 use pdfcraft_platform::mail::{self, Answer, Compose, MailError, Why};
 use pdfcraft_ui_egui::{Dialog, PdfCraftApp};
 
@@ -134,6 +135,39 @@ fn unsaved_edits_go_as_a_copy_and_the_open_file_is_left_alone() {
     assert!(!h.state().send_email.waiting() && h.state().dialog.is_none() && h.state().send_email.problem.is_none());
     // The copy's folder is its own, made for this send.
     let _ = std::fs::remove_dir_all(copy.parent().unwrap());
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+/// Unapplied redaction marks hide nothing in the file, so sending asks first: Cancel sends nothing,
+/// Send anyway sends, and the next send asks again.
+#[test]
+fn unapplied_redaction_marks_ask_before_sending() {
+    let (mut h, path) = harness("marks");
+    let shape = Shape::Redact { quads: vec![rect_quad([80.0, 140.0, 100.0, 180.0])], overlay: String::new(), look: Default::default() };
+    let style = Style::default_for(&shape);
+    let mark = NewAnnotation { page: 0, shape, style, contents: String::new(), author: "Test".into() };
+    assert!(h.state_mut().apply_edit(Edit::AddAnnotation(mark)));
+
+    assert!(h.state_mut().execute("file.send_email"));
+    h.run_steps(2);
+    assert_eq!(h.state().dialog, Some(Dialog::SendEmailMarks));
+    h.get_by_label("Cancel").click();
+    h.run_steps(3);
+    assert!(h.state().dialog.is_none() && sent().is_empty(), "Cancel sends nothing");
+
+    assert!(h.state_mut().execute("file.send_email"));
+    h.run_steps(2);
+    h.get_by_label("Send anyway").click();
+    h.run_steps(3);
+    assert!(h.state().dialog.is_none());
+    assert_eq!(sent().len(), 1);
+    answer(Answer::Opened { program: Some("Mail".into()) });
+    h.run_steps(3);
+
+    assert!(h.state_mut().execute("file.send_email"));
+    h.run_steps(2);
+    assert_eq!(h.state().dialog, Some(Dialog::SendEmailMarks), "each send asks");
+    let _ = std::fs::remove_dir_all(sent()[0].path.parent().unwrap());
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 

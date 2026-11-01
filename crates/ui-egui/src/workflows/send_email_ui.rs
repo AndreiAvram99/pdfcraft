@@ -9,7 +9,8 @@
 //! request only says it is still waiting). When the file can't be attached (a webmail site or
 //! another app that can't be handed a file, no email app, an app that didn't answer), a dialog
 //! says why and offers a new message without the file, with the file shown in its folder to attach
-//! by hand.
+//! by hand. A document with redaction marks that aren't applied asks first: the marks hide nothing
+//! in the file, so what is under them would go with it.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -48,11 +49,13 @@ pub struct SendEmailState {
     waiting: Option<Waiting>,
     /// The file that couldn't be attached, for the dialog.
     pub problem: Option<Problem>,
+    /// The person chose to send this document with its redaction marks unapplied.
+    send_with_marks: bool,
 }
 
 impl Default for SendEmailState {
     fn default() -> Self {
-        Self { sender: send, reveal, waiting: None, problem: None }
+        Self { sender: send, reveal, waiting: None, problem: None, send_with_marks: false }
     }
 }
 
@@ -99,6 +102,10 @@ impl PdfCraftApp {
             return;
         }
         let Some(doc) = self.session.get(id) else { return };
+        if doc.redaction_marks() > 0 && !std::mem::take(&mut self.send_email.send_with_marks) {
+            self.dialog = Some(Dialog::SendEmailMarks);
+            return;
+        }
         let (name, path, dirty) = (doc.name.clone(), doc.path.clone(), doc.dirty);
         let attach = match path.filter(|p| !dirty && Path::new(p).is_file()) {
             Some(p) => PathBuf::from(p),
@@ -189,6 +196,29 @@ impl PdfCraftApp {
             self.notify_error(e);
         }
     }
+}
+
+/// The question before sending unapplied redaction marks (`Dialog::SendEmailMarks`). Returns
+/// whether it closes.
+pub(crate) fn marks_body(ui: &mut egui::Ui, app: &mut PdfCraftApp) -> bool {
+    ui.set_width(420.0);
+    ui.label(RichText::new(tl!("Redactions aren't applied")).font(theme::semibold(18.0)));
+    ui.add_space(8.0);
+    ui.label(tl!("This document has redaction marks that aren't applied. The content under them is still in the file, and anyone who receives it can read it."));
+    ui.add_space(12.0);
+    let mut close = false;
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if widgets::pill_button(ui, tl!("Cancel"), true).clicked() {
+            close = true;
+        }
+        if widgets::pill_button(ui, tl!("Send anyway"), false).clicked() {
+            app.send_email.send_with_marks = true;
+            app.send_by_email();
+            app.send_email.send_with_marks = false;
+            close = true;
+        }
+    });
+    close
 }
 
 /// The "couldn't attach" dialog (`Dialog::SendEmail`). Returns whether it closes.

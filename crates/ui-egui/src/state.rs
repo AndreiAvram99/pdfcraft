@@ -140,6 +140,8 @@ pub enum Dialog {
     OverwriteChanged,
     /// File ▸ Send by email: the file couldn't be attached.
     SendEmail,
+    /// File ▸ Send by email: the document has redaction marks that aren't applied.
+    SendEmailMarks,
     /// Link Properties.
     LinkProps,
     /// Organize ▸ Extract (options), Rotate Pages.

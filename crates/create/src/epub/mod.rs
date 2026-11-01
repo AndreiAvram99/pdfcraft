@@ -96,6 +96,10 @@ impl Pictures<'_> {
     fn load(&mut self, path: &str) -> Option<Picture> {
         let bytes = self.zip.read(path).ok().flatten()?;
         if path.to_ascii_lowercase().ends_with(".svg") || bytes.windows(4).take(512).any(|w| w == b"<svg") {
+            if svg_too_large(&bytes) {
+                self.notes.insert(format!("{path}: an SVG picture this large was left out"));
+                return None;
+            }
             let opts = svg_options();
             let tree = resvg::usvg::Tree::from_data(&bytes, &opts).ok()?;
             let size = tree.size();
@@ -124,6 +128,17 @@ impl Pictures<'_> {
         let name = path.rsplit('/').next().unwrap_or(path).to_string();
         Some((name, bytes, (f64::from(w) * dom::PT_PER_PX, f64::from(h) * dom::PT_PER_PX)))
     }
+}
+
+/// At most this many bytes in an SVG picture.
+const MAX_SVG_BYTES: usize = 16 << 20;
+/// At most this many tags in an SVG picture: resvg can't be stopped once it is drawing, so what it
+/// is given has to be small enough to finish.
+const MAX_SVG_TAGS: usize = 200_000;
+
+/// An SVG picture too large to draw: a book's are far smaller.
+fn svg_too_large(bytes: &[u8]) -> bool {
+    bytes.len() > MAX_SVG_BYTES || bytes.iter().filter(|&&b| b == b'<').count() > MAX_SVG_TAGS
 }
 
 /// Options for a picture's SVG: an `<image>` that names a file is left out, never read from disk

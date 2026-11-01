@@ -88,6 +88,13 @@ fn deep_contents_list_does_not_overflow() {
 }
 
 #[test]
+fn an_svg_past_its_limits_is_too_large() {
+    assert!(!svg_too_large(b"<svg/>"));
+    assert!(svg_too_large("<g/>".repeat(MAX_SVG_TAGS + 1).as_bytes()));
+    assert!(svg_too_large(&vec![b' '; MAX_SVG_BYTES + 1]));
+}
+
+#[test]
 fn svg_image_href_never_reads_disk() {
     // A real PNG on disk, named by absolute path from inside a book's SVG.
     let dir = std::env::temp_dir().join(format!("epub-svg-href-{}", std::process::id()));

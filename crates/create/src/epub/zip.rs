@@ -13,6 +13,11 @@ pub const MAX_ENTRIES: usize = 10_000;
 pub const MAX_ENTRY: u64 = 256 << 20;
 /// At most this many bytes in all entries together, uncompressed.
 pub const MAX_TOTAL: u64 = 1 << 30;
+/// An entry this large or larger may not grow by more than [`MAX_RATIO`]: books' text and pictures
+/// stay far below it, and DEFLATE's own limit is about 1032 to 1.
+pub const RATIO_FROM: u64 = 1 << 20;
+/// How many times its compressed size a large entry may be.
+pub const MAX_RATIO: u64 = 200;
 
 /// One file in the container.
 #[derive(Clone, Debug)]
@@ -124,6 +129,9 @@ impl<'a> Zip<'a> {
         }
         if e.size > MAX_ENTRY {
             return Err(EpubError::TooLarge(format!("{name} is larger than {} MiB", MAX_ENTRY >> 20)));
+        }
+        if e.size >= RATIO_FROM && e.size / e.compressed.max(1) > MAX_RATIO {
+            return Err(EpubError::TooLarge(format!("{name} is compressed more than {MAX_RATIO} to 1")));
         }
         if self.read.get().saturating_add(e.size) > MAX_TOTAL {
             return Err(EpubError::TooLarge(format!("more than {} MiB uncompressed", MAX_TOTAL >> 20)));
@@ -263,6 +271,15 @@ pub(crate) mod tests {
         lying[dir + 24..dir + 28].copy_from_slice(&1000u32.to_le_bytes());
         let z = Zip::open(&lying).unwrap();
         assert!(matches!(z.read("bomb.xhtml"), Err(EpubError::Damaged(m)) if m.contains("larger than the container says")));
+    }
+
+    #[test]
+    fn an_entry_compressed_past_the_ratio_is_refused() {
+        // Below the size caps, and within what a directory may say.
+        let bytes = zip(&[("big.xhtml", &vec![0u8; 2 << 20], true), ("small.xhtml", &[0u8; 4096], true)]);
+        let z = Zip::open(&bytes).unwrap();
+        assert!(matches!(z.read("big.xhtml"), Err(EpubError::TooLarge(m)) if m.contains("to 1")));
+        assert_eq!(z.read("small.xhtml").unwrap().unwrap().len(), 4096);
     }
 
     #[test]

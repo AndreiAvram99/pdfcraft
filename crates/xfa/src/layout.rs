@@ -235,6 +235,8 @@ pub fn layout(tpl: &Template, data: Option<&DataNode>) -> Result<Form, XfaError>
             }
         }
     }
+    #[cfg(test)]
+    LAID_OUT_ITEMS.with(|c| c.set(l.items));
     Ok(Form { pages: l.pages, fields: l.fields, warnings: l.warnings })
 }
 
@@ -242,4 +244,10 @@ pub fn layout(tpl: &Template, data: Option<&DataNode>) -> Result<Form, XfaError>
 #[cfg(test)]
 thread_local! {
     pub(crate) static EMBED_COPIED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+// The item count the last layout on this thread ended with, against `MAX_ITEMS`.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static LAID_OUT_ITEMS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }

@@ -13,6 +13,7 @@
 
 **Stage: alpha** · next: beta, ~25% (ready for real work 50% → 75%) and ~400–700 h away
 
+> **Last reviewed:** 2026-11-01 | **Last updated:** 2026-11-01 | **Change:** minor (M11, #4818: fragment assembly preserves the validated row partition and refuses collapsed output tiles; estimates unchanged)
 > **Last reviewed:** 2026-10-29 | **Last updated:** 2026-10-29 | **Change:** minor (M7 #2517: a narrowed then widened paragraph keeps the typed spaces the wrap consumed, after save and reopen; estimates unchanged)
 > **Last reviewed:** 2026-10-27 | **Last updated:** 2026-10-27 | **Change:** minor (M10: OCR model downloads use verified ONNX pairs with legacy discovery fallback; estimates unchanged)
 > **Last reviewed:** 2026-10-25 | **Last updated:** 2026-10-25 | **Change:** minor (M14 localization current state: Arabic logical catalog, explicit RTL label direction and mirrored stock chrome; native/browser RTL workflows unqualified. Native release Hans face via LXGW WenKai Lite; estimates unchanged)
@@ -212,6 +213,8 @@ Ranked; detail and the full milestone table in [docs/roadmap.md](docs/roadmap.md
 | 8 | 1.0 polish: performance, right-to-left, missing languages, keyboard-only (M14) | 55–95 |
 
 ## Progress log
+
+- **2026-11-01 (M11, #4818):** Image fragment assembly reuses the validated row partition instead of regrouping after horizontal sorting. Near-aligned tiles no longer disappear when tolerance membership changes with the row anchor; a collapsed output row or tile leaves the original drawing untouched. Synthetic optimize/save/reopen coverage checks every tile’s pixels, with aligned and merge-disabled controls. Estimates unchanged.
 
 - **2026-10-18 (M3, #1354, local candidate):** Integrated --two-paged with current main, retaining upstream modal/picker ownership and single-tab reuse. Native launch/opening/password regressions, negative checks against the old wrapper, visual inspection, formatting, strict scoped Clippy, layers, assets, parity and scoped WASM compilation pass. Three existing socket tests are unavailable in this workspace; one existing network test remains ignored. No push or GitHub merge; estimates unchanged.
 - **2026-10-31 (M2, PR #4172 review):** Added same-machine pixel oracles for GBK Song, Hei, Kai and FangSong, including all four subset-prefixed Founder aliases. Reference PDFs use explicit Unicode mappings and independently selected installed faces; font data and rasters remain in memory. All eight cases ran; wrong-glyph and wrong-family production mutations each failed the new assertion and were restored. Validation: 422 renderer unit tests, renderer all-target Clippy with -D warnings, formatting, layers/assets/parity and renderer WASM checks passed; existing optional-patch/WASM warnings and parity notes remain. Estimates unchanged.

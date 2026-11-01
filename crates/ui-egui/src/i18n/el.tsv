@@ -2,6 +2,13 @@
 # Partial, clean-room initial contribution. Entries not yet translated fall back to English.
 # Translate from English meanings; retain placeholders and trailing ellipses.
 # Greek plural forms: one (1) | other (0, 2+).
+
+# Untranslated: English text until a translator fills these in.
+	Load to edit	Load to edit
+	Loading {name}…	Loading {name}…
+	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.
+	To print this large file, load all of it first with Load to edit.	To print this large file, load all of it first with Load to edit.
+
 	Menu	Μενού
 	File	Αρχείο
 	Edit	Επεξεργασία

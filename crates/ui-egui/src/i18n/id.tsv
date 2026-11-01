@@ -3,6 +3,13 @@
 # Clean-room translations of PdfCraft's English UI labels. Use standard Indonesian computing
 # terms; keep product and format names (PdfCraft, PDF, PDF/A, OCR, XFA, Word...) unchanged.
 # Indonesian does not inflect nouns for number, so @plural entries list one form.
+
+# Untranslated: English text until a translator fills these in.
+	Load to edit	Load to edit
+	Loading {name}…	Loading {name}…
+	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.
+	To print this large file, load all of it first with Load to edit.	To print this large file, load all of it first with Load to edit.
+
 	Menu	Menu
 	Edit	Edit
 	Pages	Halaman

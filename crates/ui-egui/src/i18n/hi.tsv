@@ -2,6 +2,13 @@
 #   context <TAB> English source <TAB> translation
 #   Clean-room translation written from the English source's meaning.
 #   License: MIT OR Apache-2.0.
+
+# Untranslated: English text until a translator fills these in.
+	Load to edit	Load to edit
+	Loading {name}…	Loading {name}…
+	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.
+	To print this large file, load all of it first with Load to edit.	To print this large file, load all of it first with Load to edit.
+
 	Menu	मेनू
 	File	फ़ाइल
 	Edit	संपादित करें

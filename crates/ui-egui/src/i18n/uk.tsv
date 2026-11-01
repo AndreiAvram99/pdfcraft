@@ -18,6 +18,12 @@
 # Integer plurals (CLDR uk): one (1, 21) | few (2–4, 22–24) | many (0, 5–19); 11–14 take many.
 # Commands use infinitives. Fixed-count templates use count-neutral wording.
 
+# Untranslated: English text until a translator fills these in.
+	Load to edit	Load to edit
+	Loading {name}…	Loading {name}…
+	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.
+	To print this large file, load all of it first with Load to edit.	To print this large file, load all of it first with Load to edit.
+
 	Menu	Меню
 	File	Файл
 	Edit	Редагування

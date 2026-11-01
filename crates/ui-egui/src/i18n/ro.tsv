@@ -9,6 +9,12 @@
 # the trailing "…" of dialog commands is kept. Commands use the noun form ("Salvare", "Deschidere…"),
 # messages address the user formally ("Alegeți", "dvs.").
 
+# Untranslated: English text until a translator fills these in.
+	Load to edit	Load to edit
+	Loading {name}…	Loading {name}…
+	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.
+	To print this large file, load all of it first with Load to edit.	To print this large file, load all of it first with Load to edit.
+
 	Menu	Meniu
 	Edit	Editare
 	Pages	Pagini

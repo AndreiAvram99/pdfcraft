@@ -16,6 +16,13 @@
 # Labels use sentence case. Product and technology names (PdfCraft, PDF, OCR, JavaScript ...)
 # stay in Latin letters; the trailing "…" of dialog commands is kept. Calendar headings use the
 # nominative month (`Lokakuu 2026`); dates use the partitive (`14. lokakuuta 2026`).
+
+# Untranslated: English text until a translator fills these in.
+	Load to edit	Load to edit
+	Loading {name}…	Loading {name}…
+	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.	This large file is being read from disk to save memory, so it can't be edited, filled in or signed yet.
+	To print this large file, load all of it first with Load to edit.	To print this large file, load all of it first with Load to edit.
+
 	Menu	Valikko
 	File	Tiedosto
 	Edit	Muokkaa
